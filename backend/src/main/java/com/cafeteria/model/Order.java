@@ -1,5 +1,7 @@
 package com.cafeteria.model;
 
+import com.cafeteria.observer.OrderStatusObserver;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -11,12 +13,16 @@ public class Order {
     private final String deliveryOption;
     private final String paymentOption;
 
+    private OrderStatus status;
+    private final List<OrderStatusObserver> observers = new ArrayList<>();
+
     private Order(Builder builder) {
         this.items = Collections.unmodifiableList(new ArrayList<>(builder.items));
         this.address = builder.address;
         this.specialInstructions = builder.specialInstructions;
         this.deliveryOption = builder.deliveryOption;
         this.paymentOption = builder.paymentOption;
+        this.status = OrderStatus.PLACED;
     }
 
     public List<OrderItem> getItems() {
@@ -37,6 +43,34 @@ public class Order {
 
     public String getPaymentOption() {
         return paymentOption;
+    }
+
+    public OrderStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(OrderStatus newStatus) {
+        if (newStatus == null) {
+            throw new IllegalArgumentException("Order status cannot be null");
+        }
+        this.status = newStatus;
+        notifyObservers(newStatus);
+    }
+
+    public void addObserver(OrderStatusObserver observer) {
+        if (observer != null && !observers.contains(observer)) {
+            observers.add(observer);
+        }
+    }
+
+    public void removeObserver(OrderStatusObserver observer) {
+        observers.remove(observer);
+    }
+
+    private void notifyObservers(OrderStatus newStatus) {
+        for (OrderStatusObserver observer : observers) {
+            observer.update(this, newStatus);
+        }
     }
 
     public double calculateTotal() {
