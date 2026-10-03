@@ -306,7 +306,7 @@ public class OrderService {
         }
 
         String option = paymentOption.trim().toLowerCase();
-        if (option.contains("mock") || option.contains("card")) {
+        if (option.contains("mock") || option.contains("card") || option.contains("cash")) {
             return new MockPayAdapter(new MockPayService());
         } else if (option.contains("quick") || option.contains("upi") || option.contains("net banking")) {
             return new QuickPayAdapter(new QuickPayService());

@@ -1,15 +1,22 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { FoodItem, CartItem, Category } from './types/food';
-import { fetchFoodItems } from './services/api';
+import { FoodItem, CartItem, Category, PlaceOrderRequest, PlaceOrderResponse } from './types/food';
+import { fetchFoodItems, placeOrder } from './services/api';
 import { Header } from './components/Header';
 import { CategoryFilter } from './components/CategoryFilter';
 import { FoodCard } from './components/FoodCard';
 import { Cart } from './components/Cart';
+import { Checkout } from './components/Checkout';
+import { OrderConfirmation } from './components/OrderConfirmation';
+import { OrderTracking } from './components/OrderTracking';
 import './index.css';
 
 const CATEGORIES: Category[] = ['All', 'Burger', 'Pizza', 'Beverage', 'Dessert'];
 
+/** Top-level view the app is currently showing */
+type AppView = 'menu' | 'checkout' | 'confirmation' | 'tracking';
+
 export const App: React.FC = () => {
+  // ── Menu / cart state ──────────────────────────────────────────────────────
   const [foodItems, setFoodItems] = useState<FoodItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<Category>('All');
   const [loading, setLoading] = useState<boolean>(true);
@@ -17,7 +24,15 @@ export const App: React.FC = () => {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [isMobileCartOpen, setIsMobileCartOpen] = useState<boolean>(false);
 
-  // Fetch food items whenever selectedCategory changes
+  // ── View state ─────────────────────────────────────────────────────────────
+  const [appView, setAppView] = useState<AppView>('menu');
+
+  // ── Order submission state ─────────────────────────────────────────────────
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [placedOrder, setPlacedOrder] = useState<PlaceOrderResponse | null>(null);
+
+  // ── Food items loading ─────────────────────────────────────────────────────
   const loadFoodItems = useCallback(async (category: Category) => {
     setLoading(true);
     setError(null);
@@ -39,7 +54,7 @@ export const App: React.FC = () => {
     loadFoodItems(selectedCategory);
   }, [selectedCategory, loadFoodItems]);
 
-  // Cart operations
+  // ── Cart operations ────────────────────────────────────────────────────────
   const handleAddToCart = (item: FoodItem) => {
     setCartItems((prev) => {
       const existing = prev.find((ci) => ci.foodItem.id === item.id);
@@ -86,6 +101,46 @@ export const App: React.FC = () => {
 
   const totalCartCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
 
+  // ── Checkout / order submission ────────────────────────────────────────────
+  const handleProceedToCheckout = () => {
+    if (cartItems.length === 0) return;
+    setSubmitError(null);
+    setAppView('checkout');
+    setIsMobileCartOpen(false);
+  };
+
+  const handleCancelCheckout = () => {
+    setSubmitError(null);
+    setAppView('menu');
+  };
+
+  const handlePlaceOrder = async (request: PlaceOrderRequest) => {
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      const response = await placeOrder(request);
+      setPlacedOrder(response);
+      setCartItems([]); // clear cart on success
+      setAppView('confirmation');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Order submission failed.';
+      setSubmitError(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleTrackOrder = () => {
+    setAppView('tracking');
+  };
+
+  const handleBackToMenu = () => {
+    setPlacedOrder(null);
+    setSubmitError(null);
+    setAppView('menu');
+  };
+
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="app-shell">
       <Header
@@ -94,96 +149,130 @@ export const App: React.FC = () => {
         isCartOpen={isMobileCartOpen}
       />
 
-      <main className="main-content">
-        <div className="layout-grid">
-          {/* Menu Browsing Section */}
-          <section className="menu-section" aria-label="Cafeteria Menu">
-            <div className="menu-header">
-              <div className="menu-title-group">
-                <h2 className="menu-heading">Menu Catalog</h2>
-                <p className="menu-subheading">
-                  {selectedCategory === 'All'
-                    ? 'Showing all items across categories'
-                    : `Filtered by ${selectedCategory}`}
-                </p>
-              </div>
+      {/* ── Checkout overlay ─────────────────────────────────── */}
+      {appView === 'checkout' && (
+        <Checkout
+          cartItems={cartItems}
+          onSubmit={handlePlaceOrder}
+          onCancel={handleCancelCheckout}
+          isSubmitting={isSubmitting}
+          submitError={submitError}
+        />
+      )}
 
-              <CategoryFilter
-                categories={CATEGORIES}
-                selectedCategory={selectedCategory}
-                onSelectCategory={(cat) => setSelectedCategory(cat)}
-                disabled={loading}
-              />
-            </div>
+      {/* ── Order Confirmation overlay ───────────────────────── */}
+      {appView === 'confirmation' && placedOrder && (
+        <OrderConfirmation
+          order={placedOrder}
+          onTrackOrder={handleTrackOrder}
+          onBackToMenu={handleBackToMenu}
+        />
+      )}
 
-            {/* Loading State */}
-            {loading && (
-              <div className="loading-state" id="loading-spinner">
-                <div className="spinner"></div>
-                <p>Loading fresh food items from backend...</p>
-              </div>
-            )}
+      {/* ── Order Tracking page ──────────────────────────────── */}
+      {appView === 'tracking' && placedOrder && (
+        <main className="main-content">
+          <OrderTracking
+            orderId={placedOrder.orderId}
+            onBackToMenu={handleBackToMenu}
+          />
+        </main>
+      )}
 
-            {/* Error State */}
-            {!loading && error && (
-              <div className="error-card" id="error-message">
-                <div className="error-icon">⚠️</div>
-                <div className="error-body">
-                  <h3 className="error-title">Backend Connection Issue</h3>
-                  <p className="error-text">{error}</p>
-                  <button
-                    className="btn-retry"
-                    onClick={() => loadFoodItems(selectedCategory)}
-                    type="button"
-                    id="retry-btn"
-                  >
-                    🔄 Retry Loading
-                  </button>
+      {/* ── Main menu + cart ─────────────────────────────────── */}
+      {appView === 'menu' && (
+        <main className="main-content">
+          <div className="layout-grid">
+            {/* Menu Browsing Section */}
+            <section className="menu-section" aria-label="Cafeteria Menu">
+              <div className="menu-header">
+                <div className="menu-title-group">
+                  <h2 className="menu-heading">Menu Catalog</h2>
+                  <p className="menu-subheading">
+                    {selectedCategory === 'All'
+                      ? 'Showing all items across categories'
+                      : `Filtered by ${selectedCategory}`}
+                  </p>
                 </div>
-              </div>
-            )}
 
-            {/* Empty State */}
-            {!loading && !error && foodItems.length === 0 && (
-              <div className="empty-menu" id="empty-menu-state">
-                <span className="empty-menu-icon">🍽️</span>
-                <h3>No items found</h3>
-                <p>No food items currently available in category "{selectedCategory}".</p>
+                <CategoryFilter
+                  categories={CATEGORIES}
+                  selectedCategory={selectedCategory}
+                  onSelectCategory={(cat) => setSelectedCategory(cat)}
+                  disabled={loading}
+                />
               </div>
-            )}
 
-            {/* Food Grid */}
-            {!loading && !error && foodItems.length > 0 && (
-              <div className="food-grid" id="food-items-grid">
-                {foodItems.map((item) => {
-                  const inCart = cartItems.find((ci) => ci.foodItem.id === item.id);
-                  return (
-                    <FoodCard
-                      key={item.id}
-                      item={item}
-                      cartQuantity={inCart ? inCart.quantity : 0}
-                      onAddToCart={handleAddToCart}
-                    />
-                  );
-                })}
-              </div>
-            )}
-          </section>
+              {/* Loading State */}
+              {loading && (
+                <div className="loading-state" id="loading-spinner">
+                  <div className="spinner"></div>
+                  <p>Loading fresh food items from backend...</p>
+                </div>
+              )}
 
-          {/* Cart Sidebar */}
-          <section className="cart-section">
-            <Cart
-              items={cartItems}
-              onIncreaseQuantity={handleIncreaseQuantity}
-              onDecreaseQuantity={handleDecreaseQuantity}
-              onRemoveItem={handleRemoveItem}
-              onClearCart={handleClearCart}
-              isOpen={isMobileCartOpen}
-              onClose={() => setIsMobileCartOpen(false)}
-            />
-          </section>
-        </div>
-      </main>
+              {/* Error State */}
+              {!loading && error && (
+                <div className="error-card" id="error-message">
+                  <div className="error-icon">⚠️</div>
+                  <div className="error-body">
+                    <h3 className="error-title">Backend Connection Issue</h3>
+                    <p className="error-text">{error}</p>
+                    <button
+                      className="btn-retry"
+                      onClick={() => loadFoodItems(selectedCategory)}
+                      type="button"
+                      id="retry-btn"
+                    >
+                      🔄 Retry Loading
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Empty State */}
+              {!loading && !error && foodItems.length === 0 && (
+                <div className="empty-menu" id="empty-menu-state">
+                  <span className="empty-menu-icon">🍽️</span>
+                  <h3>No items found</h3>
+                  <p>No food items currently available in category "{selectedCategory}".</p>
+                </div>
+              )}
+
+              {/* Food Grid */}
+              {!loading && !error && foodItems.length > 0 && (
+                <div className="food-grid" id="food-items-grid">
+                  {foodItems.map((item) => {
+                    const inCart = cartItems.find((ci) => ci.foodItem.id === item.id);
+                    return (
+                      <FoodCard
+                        key={item.id}
+                        item={item}
+                        cartQuantity={inCart ? inCart.quantity : 0}
+                        onAddToCart={handleAddToCart}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            {/* Cart Sidebar */}
+            <section className="cart-section">
+              <Cart
+                items={cartItems}
+                onIncreaseQuantity={handleIncreaseQuantity}
+                onDecreaseQuantity={handleDecreaseQuantity}
+                onRemoveItem={handleRemoveItem}
+                onClearCart={handleClearCart}
+                onProceedToCheckout={handleProceedToCheckout}
+                isOpen={isMobileCartOpen}
+                onClose={() => setIsMobileCartOpen(false)}
+              />
+            </section>
+          </div>
+        </main>
+      )}
 
       <footer className="site-footer">
         <p>Cafeteria Food Ordering System &bull; Design Patterns Demonstration</p>

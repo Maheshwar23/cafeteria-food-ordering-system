@@ -7,6 +7,7 @@ interface CartProps {
   onDecreaseQuantity: (foodItemId: number) => void;
   onRemoveItem: (foodItemId: number) => void;
   onClearCart: () => void;
+  onProceedToCheckout: () => void;
   isOpen?: boolean;
   onClose?: () => void;
 }
@@ -17,6 +18,7 @@ export const Cart: React.FC<CartProps> = ({
   onDecreaseQuantity,
   onRemoveItem,
   onClearCart,
+  onProceedToCheckout,
   isOpen = true,
   onClose,
 }) => {
@@ -150,19 +152,14 @@ export const Cart: React.FC<CartProps> = ({
               Clear Cart
             </button>
             <button
-              className="btn-checkout disabled"
-              disabled
-              title="Order submission will be connected in Stage 10B"
+              className="btn-checkout"
+              onClick={onProceedToCheckout}
               type="button"
-              id="checkout-preview-btn"
+              id="checkout-btn"
             >
-              Proceed to Order (Stage 10B)
+              Proceed to Order →
             </button>
           </div>
-
-          <p className="checkout-note">
-            ℹ️ Checkout orchestration with design patterns unlocks in Stage 10B
-          </p>
         </div>
       )}
     </aside>
